@@ -24,7 +24,10 @@ SOFTWARE.
 
 #pragma once
 #include <atomic>
+#include <array>
 
+// Add a boolean flag inside each block to indicate if this block is valid
+// In this way avoid sharing write index.
 // Be aware that push()/pop() is not atomic.
 // So if the queue is persisted in some shared memory and the writer/reader program crashed
 // in the middle of push()/pop() call, the queue could be corrupted.
@@ -36,9 +39,10 @@ public:
   static_assert(CNT && !(CNT & (CNT - 1)), "CNT must be a power of 2");
 
   T* alloc() {
+    // Now free_write_cnt replaces cached read index
     if (free_write_cnt == 0) {
       uint32_t rd_idx = ((std::atomic<uint32_t>*)&read_idx)->load(std::memory_order_consume);
-      free_write_cnt = (rd_idx - write_idx + CNT - 1) % CNT;
+      free_write_cnt = (rd_idx - write_idx + CNT - 1) & MASK;
       if (__builtin_expect(free_write_cnt == 0, 0)) return nullptr;
     }
     return &blk[write_idx].data;
@@ -46,7 +50,7 @@ public:
 
   void push() {
     ((std::atomic<bool>*)&blk[write_idx].avail)->store(true, std::memory_order_release);
-    write_idx = (write_idx + 1) % CNT;
+    write_idx = (write_idx + 1) & MASK;
     free_write_cnt--;
   }
 
@@ -68,12 +72,14 @@ public:
   T* front() {
     auto& cur_blk = blk[read_idx];
     if (!((std::atomic<bool>*)&cur_blk.avail)->load(std::memory_order_acquire)) return nullptr;
+    // Use this boolean variable to determine if the queue is empty
+    // avoid loading the write index here
     return &cur_blk.data;
   }
 
   void pop() {
     blk[read_idx].avail = false;
-    ((std::atomic<uint32_t>*)&read_idx)->store((read_idx + 1) % CNT, std::memory_order_release);
+    ((std::atomic<uint32_t>*)&read_idx)->store((read_idx + 1) & MASK, std::memory_order_release);
   }
 
   template<typename Reader>
@@ -90,12 +96,15 @@ private:
   {
     bool avail = false; // avail will be updated by both write and read thread
     T data;
-  } blk[CNT] = {};
+  };
+  std::array<Block, CNT> blk;
 
   alignas(128) uint32_t write_idx = 0; // used only by writing thread
   uint32_t free_write_cnt = CNT - 1;
 
   alignas(128) uint32_t read_idx = 0;
+  
+  constexpr static uint32_t MASK = CNT - 1;
 };
 
 

@@ -24,6 +24,8 @@ SOFTWARE.
 
 #pragma once
 
+#include <array>
+
 // alloc/push/front/pop are atomic operations, which is crash safe for shared-memory IPC
 template<uint32_t Bytes>
 class SPSCVarQueue
@@ -125,7 +127,8 @@ private:
   struct Block // size of 64, same as cache line
   {
     alignas(64) MsgHeader header;
-  } blk[BLK_CNT] = {};
+  };
+  std::array<Block, BLK_CNT> blk;
 
   alignas(128) uint32_t write_idx = 0;
   uint32_t read_idx_cach = 0; // used only by writing thread

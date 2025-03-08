@@ -24,7 +24,9 @@ SOFTWARE.
 
 #pragma once
 #include <atomic>
+#include <array>
 
+// wrap data in MsgHeader bloks
 // alloc and push are not atomic, so SPSCVarQueueOPT should not be used in shared-memory IPC(use SPSCVarQueue instead)
 template<uint32_t Bytes>
 class SPSCVarQueueOPT
@@ -118,7 +120,7 @@ public:
   }
 
 private:
-  alignas(64) MsgHeader blk[BLK_CNT] = {};
+  alignas(64) std::array<MsgHeader, BLK_CNT> blk;
 
   alignas(128) uint32_t write_idx = 0;
   uint32_t free_write_cnt = BLK_CNT;
